@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>鸣镝空气动力学仿真与声学分析系统</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif;
+            background: #0a0e17;
+            color: #e0e6ed;
+            overflow: hidden;
+            height: 100vh;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #1a1f35 0%, #0d1220 100%);
+            padding: 12px 24px;
+            border-bottom: 2px solid #2a3a5c;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header h1 {
+            font-size: 20px;
+            background: linear-gradient(90deg, #ffd700, #ff8c00);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .header .subtitle {
+            font-size: 12px;
+            color: #6b7c93;
+            margin-top: 2px;
+        }
+
+        .header .status {
+            display: flex;
+            gap: 16px;
+            align-items: center;
+        }
+
+        .status-badge {
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            background: #1e2a45;
+            border: 1px solid #2a3a5c;
+        }
+
+        .status-badge.online {
+            color: #00d4aa;
+            border-color: #00d4aa;
+        }
+
+        .status-badge.alert {
+            color: #ff6b6b;
+            border-color: #ff6b6b;
+            animation: pulse 1s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .main-container {
+            display: grid;
+            grid-template-columns: 280px 1fr 320px;
+            height: calc(100vh - 60px);
+        }
+
+        .sidebar-left, .sidebar-right {
+            background: #0f1524;
+            padding: 16px;
+            overflow-y: auto;
+            border-right: 1px solid #1a2338;
+        }
+
+        .sidebar-right {
+            border-right: none;
+            border-left: 1px solid #1a2338;
+        }
+
+        .panel {
+            margin-bottom: 20px;
+        }
+
+        .panel-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: #ffd700;
+            margin-bottom: 12px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #2a3a5c;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .panel-title::before {
+            content: '';
+            width: 3px;
+            height: 14px;
+            background: linear-gradient(180deg, #ffd700, #ff8c00);
+            border-radius: 2px;
+        }
+
+        .data-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 0;
+            font-size: 13px;
+        }
+
+        .data-label {
+            color: #6b7c93;
+        }
+
+        .data-value {
+            font-family: 'Consolas', monospace;
+            font-weight: 600;
+            color: #e0e6ed;
+        }
+
+        .data-value.highlight {
+            color: #ffd700;
+            font-size: 15px;
+        }
+
+        .data-value.alert {
+            color: #ff6b6b;
+        }
+
+        .data-unit {
+            color: #4a5568;
+            font-size: 11px;
+            margin-left: 4px;
+        }
+
+        .view-container {
+            position: relative;
+            background: #050810;
+        }
+
+        #three-canvas {
+            width: 100%;
+            height: 100%;
+        }
+
+        #sound-field-canvas {
+            position: absolute;
+            bottom: 16px;
+            left: 16px;
+            width: 240px;
+            height: 180px;
+            border: 1px solid #2a3a5c;
+            border-radius: 8px;
+            background: rgba(0, 0, 0, 0.7);
+        }
+
+        .view-controls {
+            position: absolute;
+            top: 16px;
+            right: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .view-btn {
+            padding: 8px 16px;
+            background: rgba(26, 31, 53, 0.9);
+            border: 1px solid #2a3a5c;
+            color: #e0e6ed;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.2s;
+        }
+
+        .view-btn:hover {
+            background: #2a3a5c;
+            border-color: #ffd700;
+        }
+
+        .view-btn.active {
+            background: #ffd700;
+            color: #0a0e17;
+            border-color: #ffd700;
+        }
+
+        .control-group {
+            margin-bottom: 12px;
+        }
+
+        .control-group label {
+            display: block;
+            font-size: 12px;
+            color: #6b7c93;
+            margin-bottom: 6px;
+        }
+
+        .control-group input[type="range"] {
+            width: 100%;
+            height: 4px;
+            -webkit-appearance: none;
+            background: #1a2338;
+            border-radius: 2px;
+            outline: none;
+        }
+
+        .control-group input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 14px;
+            height: 14px;
+            background: #ffd700;
+            border-radius: 50%;
+            cursor: pointer;
+        }
+
+        .control-row {
+            display: flex;
+            gap: 8px;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .control-value {
+            font-family: 'Consolas', monospace;
+            font-size: 12px;
+            color: #ffd700;
+            min-width: 50px;
+            text-align: right;
+        }
+
+        .alerts-list {
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .alert-item {
+            padding: 10px;
+            background: #1a0a0a;
+            border-left: 3px solid #ff6b6b;
+            border-radius: 4px;
+            margin-bottom: 8px;
+            font-size: 12px;
+        }
+
+        .alert-item.warning {
+            background: #1a1408;
+            border-left-color: #ffd700;
+        }
+
+        .alert-item.critical {
+            background: #1a0a0a;
+            border-left-color: #ff3333;
+        }
+
+        .alert-type {
+            font-weight: 600;
+            color: #ff6b6b;
+            margin-bottom: 4px;
+        }
+
+        .alert-item.warning .alert-type {
+            color: #ffd700;
+        }
+
+        .alert-item.critical .alert-type {
+            color: #ff3333;
+        }
+
+        .alert-msg {
+            color: #a0aec0;
+            font-size: 11px;
+        }
+
+        .alert-time {
+            color: #4a5568;
+            font-size: 10px;
+            margin-top: 4px;
+        }
+
+        .legend {
+            position: absolute;
+            bottom: 16px;
+            right: 16px;
+            background: rgba(15, 21, 36, 0.9);
+            padding: 12px;
+            border-radius: 8px;
+            border: 1px solid #2a3a5c;
+            font-size: 11px;
+        }
+
+        .legend-title {
+            color: #ffd700;
+            margin-bottom: 8px;
+            font-weight: 600;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin: 4px 0;
+        }
+
+        .legend-color {
+            width: 20px;
+            height: 8px;
+            border-radius: 2px;
+        }
+
+        .progress-bar {
+            height: 6px;
+            background: #1a2338;
+            border-radius: 3px;
+            overflow: hidden;
+            margin-top: 4px;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #00d4aa, #ffd700);
+            border-radius: 3px;
+            transition: width 0.3s;
+        }
+
+        .arrow-selector {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-bottom: 16px;
+        }
+
+        .arrow-chip {
+            padding: 6px 12px;
+            background: #1a2338;
+            border: 1px solid #2a3a5c;
+            border-radius: 16px;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .arrow-chip:hover {
+            border-color: #ffd700;
+        }
+
+        .arrow-chip.active {
+            background: #ffd700;
+            color: #0a0e17;
+            border-color: #ffd700;
+        }
+
+        .sound-field-title {
+            position: absolute;
+            bottom: 208px;
+            left: 16px;
+            font-size: 12px;
+            color: #ffd700;
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div>
+            <h1>鸣镝空气动力学仿真与声学分析系统</h1>
+            <div class="subtitle">汉代鸣镝复原研究 · CFD气动仿真 · 气动声学分析</div>
+        </div>
+        <div class="status">
+            <div class="status-badge" id="connection-status">连接中...</div>
+            <div class="status-badge online" id="sensor-count">传感器: 0</div>
+        </div>
+    </div>
+
+    <div class="main-container">
+        <div class="sidebar-left">
+            <div class="panel">
+                <div class="panel-title">响箭选择</div>
+                <div class="arrow-selector" id="arrow-selector">
+                    <div class="arrow-chip active" data-arrow="MD-001">MD-001</div>
+                    <div class="arrow-chip" data-arrow="MD-002">MD-002</div>
+                    <div class="arrow-chip" data-arrow="MD-003">MD-003</div>
+                </div>
+            </div>
+
+            <div class="panel">
+                <div class="panel-title">飞行参数</div>
+                <div class="data-item">
+                    <span class="data-label">飞行速度</span>
+                    <span><span class="data-value highlight" id="velocity">0.00</span><span class="data-unit">m/s</span></span>
+                </div>
+                <div class="data-item">
+                    <span class="data-label">转速</span>
+                    <span><span class="data-value" id="rotation-speed">0.00</span><span class="data-unit">rad/s</span></span>
+                </div>
+                <div class="data-item">
+                    <span class="data-label">飞行高度</span>
+                    <span><span class="data-value" id="altitude">0.00</span><span class="data-unit">m</span></span>
+                </div>
+                <div class="data-item">
+                    <span class="data-label">俯仰角</span>
+                    <span><span class="data-value" id="pitch">0.00</span><span class="data-unit">rad</span></span>
+                </div>
+                <div class="data-item">
+                    <span class="data-label">预估射程</span>
+                    <span><span class="data-value" id="range">0.00</span><span class="data-unit">m</span></span>
+                </div>
+            </div>
+
+            <div class="panel">
+                <div class="panel-title">仿真控制</div>
+                <div class="control-group">
+                    <div class="control-row">
+                        <label>初始速度</label>
+                        <span class="control-value" id="vel-control-val">65 m/s</span>
+                    </div>
+                    <input type="range" id="velocity-control" min="20" max="100" value="65" step="1">
+                </div>
+                <div class="control-group">
+                    <div class="control-row">
+                        <label>发射角度</label>
+                        <span class="control-value" id="angle-control-val">0.30 rad</span>
+                    </div>
+                    <input type="range" id="angle-control" min="0" max="1.0" value="0.3" step="0.05">
+                </div>
+                <div class="control-group">
+                    <div class="control-row">
+                        <label>初始转速</label>
+                        <span class="control-value" id="rot-control-val">100 rad/s</span>
+                    </div>
+                    <input type="range" id="rotation-control" min="0" max="300" value="100" step="10">
+                </div>
+            </div>
+        </div>
+
+        <div class="view-container">
+            <canvas id="three-canvas"></canvas>
+            <div class="sound-field-title">声场分布 (截面)</div>
+            <canvas id="sound-field-canvas"></canvas>
+
+            <div class="view-controls">
+                <button class="view-btn active" data-view="3d">3D视图</button>
+                <button class="view-btn" data-view="flow">气流流线</button>
+                <button class="view-btn" data-view="acoustic">声场模式</button>
+            </div>
+
+            <div class="legend">
+                <div class="legend-title">图例</div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #ffd700;"></div>
+                    <span>响箭主体</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #88ccff;"></div>
+                    <span>气流流线</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: linear-gradient(90deg, #001133, #ff3300);"></div>
+                    <span>声压级梯度</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="sidebar-right">
+            <div class="panel">
+                <div class="panel-title">声学分析</div>
+                <div class="data-item">
+                    <span class="data-label">哨音频率</span>
+                    <span><span class="data-value highlight" id="whistle-freq">0.0</span><span class="data-unit">Hz</span></span>
+                </div>
+                <div class="data-item">
+                    <span class="data-label">声压级</span>
+                    <span><span class="data-value" id="spl">0.0</span><span class="data-unit">dB</span></span>
+                </div>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="spl-bar" style="width: 0%"></div>
+                </div>
+                <div class="data-item">
+                    <span class="data-label">传播距离</span>
+                    <span><span class="data-value" id="prop-distance">0.0</span><span class="data-unit">m</span></span>
+                </div>
+                <div class="data-item">
+                    <span class="data-label">斯托劳哈尔数</span>
+                    <span><span class="data-value" id="strouhal">0.00</span></span>
+                </div>
+                <div class="data-item">
+                    <span class="data-label">雷诺数</span>
+                    <span><span class="data-value" id="reynolds">0</span></span>
+                </div>
+            </div>
+
+            <div class="panel">
+                <div class="panel-title">空气动力学</div>
+                <div class="data-item">
+                    <span class="data-label">阻力</span>
+                    <span><span class="data-value" id="drag-force">0.000</span><span class="data-unit">N</span></span>
+                </div>
+                <div class="data-item">
+                    <span class="data-label">升力</span>
+                    <span><span class="data-value" id="lift-force">0.000</span><span class="data-unit">N</span></span>
+                </div>
+                <div class="data-item">
+                    <span class="data-label">阻力系数</span>
+                    <span><span class="data-value" id="drag-coef">0.000</span></span>
+                </div>
+                <div class="data-item">
+                    <span class="data-label">升力系数</span>
+                    <span><span class="data-value" id="lift-coef">0.000</span></span>
+                </div>
+                <div class="data-item">
+                    <span class="data-label">力矩</span>
+                    <span><span class="data-value" id="moment">0.000</span><span class="data-unit">N·m</span></span>
+                </div>
+            </div>
+
+            <div class="panel">
+                <div class="panel-title">告警记录</div>
+                <div class="alerts-list" id="alerts-list">
+                    <div style="color: #4a5568; font-size: 12px; text-align: center; padding: 20px 0;">
+                        暂无告警
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/app.js"></script>
+</body>
+</html>
