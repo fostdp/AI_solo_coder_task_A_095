@@ -1,0 +1,58 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs & runtime
+*.log
+logs/
+*.pid
+*.seed
+
+# Env
+.env
+.env.local
+.override
+
+# DB / data
+*.db
+*.sqlite
+data/
+
+# Docker
+.dockerignore
+docker-compose.override.yml
+
+# Build
+dist/
+build/
+*.whl
+
+# Coverage / tests
+coverage.xml
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Frontend (build artifacts are created in Docker stage, keep sources)
+frontend/**/*.gz
+!frontend/**/*.svg.gz

@@ -1,0 +1,139 @@
+{
+  "arrows": [
+    {
+      "arrow_id": "MD-001",
+      "name": "铜鸣镝（重型）",
+      "shape_profile": "heavy",
+      "shape": {
+        "length_m": 0.92,
+        "diameter_m": 0.0095,
+        "mass_kg": 0.030,
+        "whistle_diameter_m": 0.018,
+        "whistle_length_m": 0.035,
+        "fletching_count": 3,
+        "tip_type": "conical_brass"
+      },
+      "velocity_profile": {
+        "mode": "fixed_range",
+        "initial": [55.0, 70.0],
+        "decay_per_min": 0.92,
+        "jitter_std": 1.5
+      },
+      "rotation_profile": {
+        "initial": [90.0, 140.0],
+        "decay_per_min": 0.95
+      },
+      "launch_angle": [0.25, 0.45],
+      "whistle_tuning": {
+        "strouhal_bias": 0.0,
+        "frequency_offset_hz": 0.0
+      },
+      "enabled": true,
+      "interval_seconds": 60
+    },
+    {
+      "arrow_id": "MD-002",
+      "name": "骨鸣镝（标准）",
+      "shape_profile": "standard",
+      "shape": {
+        "length_m": 0.85,
+        "diameter_m": 0.0080,
+        "mass_kg": 0.025,
+        "whistle_diameter_m": 0.015,
+        "whistle_length_m": 0.030,
+        "fletching_count": 3,
+        "tip_type": "conical_iron"
+      },
+      "velocity_profile": {
+        "mode": "fixed_range",
+        "initial": [60.0, 80.0],
+        "decay_per_min": 0.90,
+        "jitter_std": 2.0
+      },
+      "rotation_profile": {
+        "initial": [100.0, 160.0],
+        "decay_per_min": 0.93
+      },
+      "launch_angle": [0.20, 0.40],
+      "whistle_tuning": {
+        "strouhal_bias": 0.0,
+        "frequency_offset_hz": 0.0
+      },
+      "enabled": true,
+      "interval_seconds": 60
+    },
+    {
+      "arrow_id": "MD-003",
+      "name": "高速传令箭（跨音速测试）",
+      "shape_profile": "sleek",
+      "shape": {
+        "length_m": 0.78,
+        "diameter_m": 0.0065,
+        "mass_kg": 0.018,
+        "whistle_diameter_m": 0.010,
+        "whistle_length_m": 0.025,
+        "fletching_count": 4,
+        "tip_type": "ogival_steel"
+      },
+      "velocity_profile": {
+        "mode": "sweep",
+        "initial": [90.0, 130.0],
+        "decay_per_min": 0.88,
+        "jitter_std": 3.0,
+        "sweep_period_minutes": 30
+      },
+      "rotation_profile": {
+        "initial": [150.0, 250.0],
+        "decay_per_min": 0.90
+      },
+      "launch_angle": [0.15, 0.30],
+      "whistle_tuning": {
+        "strouhal_bias": 0.02,
+        "frequency_offset_hz": 150.0
+      },
+      "enabled": true,
+      "interval_seconds": 60
+    },
+    {
+      "arrow_id": "MD-004",
+      "name": "校射箭（低速高抛）",
+      "shape_profile": "training",
+      "shape": {
+        "length_m": 0.80,
+        "diameter_m": 0.0090,
+        "mass_kg": 0.028,
+        "whistle_diameter_m": 0.020,
+        "whistle_length_m": 0.040,
+        "fletching_count": 3,
+        "tip_type": "blunt"
+      },
+      "velocity_profile": {
+        "mode": "fixed_range",
+        "initial": [35.0, 55.0],
+        "decay_per_min": 0.85,
+        "jitter_std": 1.0
+      },
+      "rotation_profile": {
+        "initial": [60.0, 100.0],
+        "decay_per_min": 0.92
+      },
+      "launch_angle": [0.40, 0.65],
+      "whistle_tuning": {
+        "strouhal_bias": -0.01,
+        "frequency_offset_hz": -100.0
+      },
+      "enabled": true,
+      "interval_seconds": 90
+    }
+  ],
+  "global": {
+    "udp_host": "udp_receiver",
+    "udp_port": 5005,
+    "noise": {
+      "velocity_std": 0.5,
+      "rotation_std": 2.0,
+      "frequency_std": 5.0,
+      "spl_std": 0.8
+    }
+  }
+}

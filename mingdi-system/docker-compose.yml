@@ -1,0 +1,271 @@
+services:
+  ###########################
+  # InfluxDB v2.x (时序存储)
+  ###########################
+  influxdb:
+    image: influxdb:2.7-alpine
+    container_name: mingdi-influxdb
+    restart: unless-stopped
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: ${INFLUXDB_USER:-admin}
+      DOCKER_INFLUXDB_INIT_PASSWORD: ${INFLUXDB_PASSWORD:-admin123456}
+      DOCKER_INFLUXDB_INIT_ORG: ${INFLUXDB_ORG:-mingdi-lab}
+      DOCKER_INFLUXDB_INIT_BUCKET: ${INFLUXDB_BUCKET:-mingdi}
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: ${INFLUXDB_TOKEN:-mingdi-super-secret-admin-token-v2}
+      INFLUXDB_REPORTING_DISABLED: "true"
+    volumes:
+      - influxdb-data:/var/lib/influxdb2
+      - influxdb-config:/etc/influxdb2
+    ports:
+      - "${INFLUXDB_PORT:-8086}:8086"
+    healthcheck:
+      test: ["CMD", "influx", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks:
+      - mingdi-net
+
+  ###########################
+  # Redis (消息总线 Pub/Sub)
+  ###########################
+  redis:
+    image: redis:7.4-alpine
+    container_name: mingdi-redis
+    restart: unless-stopped
+    command: >
+      redis-server
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+      --appendonly yes
+      --appendfsync everysec
+    volumes:
+      - redis-data:/data
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 2s
+      retries: 15
+    networks:
+      - mingdi-net
+
+  ###########################
+  # Mosquitto (MQTT Broker)
+  ###########################
+  mqtt:
+    image: eclipse-mosquitto:2.0-openssl
+    container_name: mingdi-mqtt
+    restart: unless-stopped
+    volumes:
+      - mqtt-data:/mosquitto/data
+      - mqtt-log:/mosquitto/log
+      - ./deploy/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+    ports:
+      - "${MQTT_PORT:-1883}:1883"
+    healthcheck:
+      test: ["CMD-SHELL", "mosquitto_sub -h localhost -t '$$SYS/#' -C 1 -W 2 -u '' -P '' || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - mingdi-net
+
+  ###########################
+  # Python 构建镜像 (供所有服务共用)
+  ###########################
+  app-base:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: mingdi-app:latest
+    container_name: mingdi-app-build
+    command: ["echo", "build-only"]
+    profiles: ["build"]
+    networks:
+      - mingdi-net
+
+  ###########################
+  # FastAPI Gateway (gunicorn + uvicorn workers)
+  ###########################
+  api-gateway:
+    image: mingdi-app:latest
+    container_name: mingdi-api-gateway
+    restart: unless-stopped
+    depends_on:
+      influxdb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mqtt:
+        condition: service_healthy
+    environment:
+      APP_ENV: production
+      APP_NAME: "鸣镝系统 API Gateway"
+      INFLUXDB_HOST: influxdb
+      INFLUXDB_PORT: 8086
+      INFLUXDB_ORG: ${INFLUXDB_ORG:-mingdi-lab}
+      INFLUXDB_BUCKET: ${INFLUXDB_BUCKET:-mingdi}
+      INFLUXDB_TOKEN: ${INFLUXDB_TOKEN:-mingdi-super-secret-admin-token-v2}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      MQTT_HOST: mqtt
+      MQTT_PORT: 1883
+      UDP_HOST: 0.0.0.0
+      UDP_PORT: 5005
+      ALERT_FREQUENCY_MIN: ${ALERT_FREQ_MIN:-800}
+      ALERT_FREQUENCY_MAX: ${ALERT_FREQ_MAX:-3500}
+      ALERT_RANGE_MIN: ${ALERT_RANGE_MIN:-150}
+      ALERT_SPL_MIN: ${ALERT_SPL_MIN:-55}
+    ports:
+      - "${API_PORT:-8000}:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+    networks:
+      - mingdi-net
+
+  ###########################
+  # UDP 接收微服务
+  ###########################
+  udp-receiver:
+    image: mingdi-app:latest
+    container_name: mingdi-udp-receiver
+    restart: unless-stopped
+    command: ["python", "services/udp_receiver.py"]
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      INFLUXDB_HOST: influxdb
+      INFLUXDB_PORT: 8086
+      INFLUXDB_ORG: ${INFLUXDB_ORG:-mingdi-lab}
+      INFLUXDB_BUCKET: ${INFLUXDB_BUCKET:-mingdi}
+      INFLUXDB_TOKEN: ${INFLUXDB_TOKEN:-mingdi-super-secret-admin-token-v2}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      UDP_HOST: 0.0.0.0
+      UDP_PORT: 5005
+    ports:
+      - "${UDP_PORT:-5005}:5005/udp"
+    networks:
+      - mingdi-net
+
+  ###########################
+  # 气动仿真微服务
+  ###########################
+  aero-simulator:
+    image: mingdi-app:latest
+    container_name: mingdi-aero-simulator
+    restart: unless-stopped
+    command: ["python", "services/aerodynamics_simulator.py"]
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    networks:
+      - mingdi-net
+
+  ###########################
+  # 声学分析微服务
+  ###########################
+  acoustic-analyzer:
+    image: mingdi-app:latest
+    container_name: mingdi-acoustic-analyzer
+    restart: unless-stopped
+    command: ["python", "services/acoustic_analyzer.py"]
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    networks:
+      - mingdi-net
+
+  ###########################
+  # 告警 + MQTT 推送微服务
+  ###########################
+  alarm-mqtt:
+    image: mingdi-app:latest
+    container_name: mingdi-alarm-mqtt
+    restart: unless-stopped
+    command: ["python", "services/alarm_mqtt.py"]
+    depends_on:
+      influxdb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mqtt:
+        condition: service_healthy
+    environment:
+      INFLUXDB_HOST: influxdb
+      INFLUXDB_PORT: 8086
+      INFLUXDB_ORG: ${INFLUXDB_ORG:-mingdi-lab}
+      INFLUXDB_BUCKET: ${INFLUXDB_BUCKET:-mingdi}
+      INFLUXDB_TOKEN: ${INFLUXDB_TOKEN:-mingdi-super-secret-admin-token-v2}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      MQTT_HOST: mqtt
+      MQTT_PORT: 1883
+      ALERT_FREQUENCY_MIN: ${ALERT_FREQ_MIN:-800}
+      ALERT_FREQUENCY_MAX: ${ALERT_FREQ_MAX:-3500}
+      ALERT_RANGE_MIN: ${ALERT_RANGE_MIN:-150}
+      ALERT_SPL_MIN: ${ALERT_SPL_MIN:-55}
+    networks:
+      - mingdi-net
+
+  ###########################
+  # InfluxDB 初始化 (降采样任务 / 保留策略)
+  ###########################
+  influx-init:
+    image: mingdi-app:latest
+    container_name: mingdi-influx-init
+    depends_on:
+      influxdb:
+        condition: service_healthy
+    restart: "no"
+    command: ["python", "scripts/influxdb_init.py"]
+    environment:
+      INFLUXDB_HOST: influxdb
+      INFLUXDB_PORT: 8086
+      INFLUXDB_ORG: ${INFLUXDB_ORG:-mingdi-lab}
+      INFLUXDB_BUCKET: ${INFLUXDB_BUCKET:-mingdi}
+      INFLUXDB_TOKEN: ${INFLUXDB_TOKEN:-mingdi-super-secret-admin-token-v2}
+    networks:
+      - mingdi-net
+
+  ###########################
+  # 鸣镝传感器模拟器
+  ###########################
+  sensor-simulator:
+    image: mingdi-app:latest
+    container_name: mingdi-sensor-simulator
+    restart: unless-stopped
+    command: ["python", "scripts/sensor_simulator.py", "--host", "udp-receiver", "--port", "5005"]
+    depends_on:
+      udp-receiver:
+        condition: service_started
+    networks:
+      - mingdi-net
+
+volumes:
+  influxdb-data:
+  influxdb-config:
+  redis-data:
+  mqtt-data:
+  mqtt-log:
+
+networks:
+  mingdi-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16

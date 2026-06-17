@@ -1,7 +1,12 @@
 import threading
-from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
+import gzip
+import os
+from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, Response
+from starlette.middleware.base import BaseHTTPMiddleware
 from contextlib import asynccontextmanager
 from typing import Optional, List
 import logging
@@ -97,6 +102,37 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(GZipMiddleware, minimum_size=500)
+
+_frontend_path = os.path.join(os.path.dirname(__file__), "..", "frontend")
+
+class PreCompressedStaticMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        path = request.url.path
+        accept_encoding = request.headers.get("accept-encoding", "")
+        if path.startswith("/static/") and "gzip" in accept_encoding.lower():
+            rel = path[len("/static/"):]
+            gz_path = os.path.join(_frontend_path, rel + ".gz")
+            orig_path = os.path.join(_frontend_path, rel)
+            if os.path.isfile(gz_path) and os.path.isfile(orig_path):
+                headers = {
+                    "Content-Encoding": "gzip",
+                    "Vary": "Accept-Encoding",
+                }
+                ext = os.path.splitext(rel)[1].lower()
+                mime = {
+                    ".js": "application/javascript",
+                    ".css": "text/css",
+                    ".html": "text/html",
+                    ".json": "application/json",
+                    ".svg": "image/svg+xml",
+                }.get(ext)
+                if mime:
+                    headers["Content-Type"] = mime
+                return Response(content=open(gz_path, "rb").read(), headers=headers)
+        return await call_next(request)
+
+app.add_middleware(PreCompressedStaticMiddleware)
 
 frontend_path = os.path.join(os.path.dirname(__file__), "..", "frontend")
 if os.path.exists(frontend_path):
