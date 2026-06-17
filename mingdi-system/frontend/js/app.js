@@ -2,7 +2,7 @@ const API_BASE = "http://localhost:8000/api";
 
 let scene, camera, renderer, controls;
 let arrowGroup = null;
-let streamlines = [];
+let streamSurfaces = [];
 let soundFieldMesh = null;
 let animationId = null;
 let currentArrow = "MD-001";
@@ -211,16 +211,22 @@ function createArrow() {
 }
 
 function createStreamlines() {
-    const lineCount = 15;
-    const pointsPerLine = 60;
+    const ribbonCount = 10;
+    const pointsPerRibbon = 50;
+    const ribbonWidth = 0.25;
 
-    for (let i = 0; i < lineCount; i++) {
-        const points = [];
-        const yStart = -3 + (6 * i / (lineCount - 1));
+    for (let r = 0; r < ribbonCount; r++) {
+        const yStart = -3 + (6 * r / (ribbonCount - 1));
 
         let x = -8, y = yStart;
-        for (let j = 0; j < pointsPerLine; j++) {
+        const pathPoints = [];
+        const speedFactors = [];
+
+        for (let j = 0; j < pointsPerRibbon; j++) {
             const speedFactor = 1.0 - 0.4 * Math.exp(-(y * y / 4));
+            pathPoints.push(new THREE.Vector3(x, y, 0));
+            speedFactors.push(speedFactor);
+
             const vx = 1.0 * speedFactor;
             const vy = 0.05 * Math.sin(x * 0.3) + 0.02 * y;
 
@@ -228,19 +234,68 @@ function createStreamlines() {
             y += vy * 0.25;
 
             if (x > 8) break;
-            points.push(new THREE.Vector3(x, y, 0));
         }
 
-        const lineGeo = new THREE.BufferGeometry().setFromPoints(points);
-        const lineMat = new THREE.LineBasicMaterial({
-            color: 0x66aaff,
+        if (pathPoints.length < 3) continue;
+
+        const vertices = [];
+        const colors = [];
+        const indices = [];
+
+        for (let i = 0; i < pathPoints.length; i++) {
+            const p = pathPoints[i];
+            const sf = speedFactors[i];
+
+            let tangent;
+            if (i === 0) {
+                tangent = new THREE.Vector3().subVectors(pathPoints[1], pathPoints[0]).normalize();
+            } else if (i === pathPoints.length - 1) {
+                tangent = new THREE.Vector3().subVectors(pathPoints[i], pathPoints[i - 1]).normalize();
+            } else {
+                tangent = new THREE.Vector3().subVectors(pathPoints[i + 1], pathPoints[i - 1]).normalize();
+            }
+
+            const normal = new THREE.Vector3(-tangent.y, tangent.x, 0).normalize();
+
+            const halfWidth = ribbonWidth * 0.5 * (0.4 + 0.6 * sf);
+
+            const p1 = new THREE.Vector3().copy(p).addScaledVector(normal, halfWidth);
+            const p2 = new THREE.Vector3().copy(p).addScaledVector(normal, -halfWidth);
+
+            vertices.push(p1.x, p1.y, p1.z);
+            vertices.push(p2.x, p2.y, p2.z);
+
+            const t = sf;
+            const color1 = new THREE.Color();
+            color1.setRGB(0.2 + t * 0.3, 0.5 + t * 0.2, 0.9 - t * 0.1);
+            colors.push(color1.r, color1.g, color1.b);
+            colors.push(color1.r, color1.g, color1.b);
+
+            if (i < pathPoints.length - 1) {
+                const base = i * 2;
+                indices.push(base, base + 1, base + 2);
+                indices.push(base + 1, base + 3, base + 2);
+            }
+        }
+
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+        geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+        geometry.setIndex(indices);
+        geometry.computeVertexNormals();
+
+        const material = new THREE.MeshBasicMaterial({
+            vertexColors: true,
             transparent: true,
-            opacity: 0.6
+            opacity: 0.45,
+            side: THREE.DoubleSide,
+            depthWrite: false
         });
-        const line = new THREE.Line(lineGeo, lineMat);
-        line.visible = false;
-        streamlines.push(line);
-        scene.add(line);
+
+        const ribbon = new THREE.Mesh(geometry, material);
+        ribbon.visible = false;
+        streamSurfaces.push(ribbon);
+        scene.add(ribbon);
     }
 }
 
@@ -306,30 +361,88 @@ function updateSoundField(spl) {
     geometry.attributes.color.needsUpdate = true;
 }
 
-function updateStreamlines(velocity) {
-    streamlines.forEach((line, i) => {
-        const positions = line.geometry.attributes.position;
-        const yStart = -3 + (6 * i / (streamlines.length - 1));
+function updateStreamSurfaces(velocity) {
+    streamSurfaces.forEach((ribbon, r) => {
+        const ribbonCount = streamSurfaces.length;
+        const yStart = -3 + (6 * r / (ribbonCount - 1));
+        const factor = velocity / 65;
+        const ribbonWidth = 0.25;
 
         let x = -8, y = yStart;
-        const factor = velocity / 65;
+        const pathPoints = [];
+        const speedFactors = [];
 
-        for (let j = 0; j < positions.count; j++) {
+        for (let j = 0; j < 50; j++) {
             const speedFactor = 1.0 - 0.4 * Math.exp(-(y * y / 4));
+            pathPoints.push({ x, y });
+            speedFactors.push(speedFactor);
+
             const vx = factor * speedFactor;
             const vy = 0.05 * Math.sin(x * 0.3) + 0.02 * y;
 
             x += vx * 0.25;
             y += vy * 0.25;
 
-            if (x > 8) {
-                positions.setX(j, null);
-                break;
-            }
-            positions.setX(j, x);
-            positions.setY(j, y);
+            if (x > 8) break;
         }
-        positions.needsUpdate = true;
+
+        if (pathPoints.length < 3) return;
+
+        const vertices = [];
+        const colors = [];
+        const indices = [];
+
+        for (let i = 0; i < pathPoints.length; i++) {
+            const p = pathPoints[i];
+            const sf = speedFactors[i];
+
+            let tx, ty;
+            if (i === 0) {
+                tx = pathPoints[1].x - pathPoints[0].x;
+                ty = pathPoints[1].y - pathPoints[0].y;
+            } else if (i === pathPoints.length - 1) {
+                tx = pathPoints[i].x - pathPoints[i - 1].x;
+                ty = pathPoints[i].y - pathPoints[i - 1].y;
+            } else {
+                tx = pathPoints[i + 1].x - pathPoints[i - 1].x;
+                ty = pathPoints[i + 1].y - pathPoints[i - 1].y;
+            }
+            const len = Math.sqrt(tx * tx + ty * ty) || 1;
+            const nx = -ty / len;
+            const ny = tx / len;
+
+            const halfWidth = ribbonWidth * 0.5 * (0.4 + 0.6 * sf);
+
+            vertices.push(p.x + nx * halfWidth, p.y + ny * halfWidth, 0);
+            vertices.push(p.x - nx * halfWidth, p.y - ny * halfWidth, 0);
+
+            const t = sf;
+            colors.push(0.2 + t * 0.3, 0.5 + t * 0.2, 0.9 - t * 0.1);
+            colors.push(0.2 + t * 0.3, 0.5 + t * 0.2, 0.9 - t * 0.1);
+
+            if (i < pathPoints.length - 1) {
+                const base = i * 2;
+                indices.push(base, base + 1, base + 2);
+                indices.push(base + 1, base + 3, base + 2);
+            }
+        }
+
+        const posAttr = ribbon.geometry.attributes.position;
+        if (posAttr && posAttr.count === vertices.length / 3) {
+            posAttr.array.set(new Float32BufferAttribute(vertices, 3).array);
+            posAttr.needsUpdate = true;
+            ribbon.geometry.attributes.color.array.set(new Float32BufferAttribute(colors, 3).array);
+            ribbon.geometry.attributes.color.needsUpdate = true;
+            ribbon.geometry.computeVertexNormals();
+        } else {
+            ribbon.geometry.dispose();
+            const newGeo = new THREE.BufferGeometry();
+            newGeo.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+            newGeo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+            newGeo.setIndex(indices);
+            newGeo.computeVertexNormals();
+            ribbon.geometry = newGeo;
+        }
     });
 }
 
@@ -358,8 +471,8 @@ function setView(view) {
         btn.classList.toggle('active', btn.dataset.view === view);
     });
 
-    streamlines.forEach(line => {
-        line.visible = (view === 'flow' || view === '3d');
+    streamSurfaces.forEach(ribbon => {
+        ribbon.visible = (view === 'flow' || view === '3d');
     });
 
     if (soundFieldMesh) {
@@ -391,7 +504,7 @@ function setupUI() {
         const val = e.target.value;
         document.getElementById('vel-control-val').textContent = val + ' m/s';
         currentData.velocity = parseFloat(val);
-        updateStreamlines(currentData.velocity);
+        updateStreamSurfaces(currentData.velocity);
         runSimulation();
     });
 
@@ -455,7 +568,7 @@ function fetchData() {
             currentData.estimated_range = data.estimated_range;
             currentData.is_alert = data.is_alert;
 
-            updateStreamlines(currentData.velocity);
+            updateStreamSurfaces(currentData.velocity);
             updateSoundField(currentData.sound_pressure_level);
             drawSoundFieldCanvas();
             updateUI();
